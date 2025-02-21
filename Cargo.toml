@@ -1,0 +1,7 @@
+[package]
+name = "modular-arithmetic-visualizer"
+version = "0.1.0"
+authors = ["Jason Gonzales"]
+edition = "2021"
+
+[dependencies]
