@@ -5,3 +5,4 @@ authors = ["Jason Gonzales"]
 edition = "2021"
 
 [dependencies]
+nannou = "0.19"
