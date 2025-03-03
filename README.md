@@ -9,11 +9,31 @@ The Modular Arithmetic Visualizer is a project using the nannou creative coding 
 Name: Jason Gonzales
 Date: February 4, 2025
 
-## Setup & Execution
+## Installation
 
-To compile the program use `cargo build`.
+Clone the repository and navigate into the project directory:
 
-To execute the program use `cargo run <operand> <modulus>`
+```sh
+git clone https://github.com/jasonandmonte/modular-arithmetic-visualizer.git
+cd modular-arithmetic-visualizer
+```
 
+## Execution
+
+To compile the program:
+```sh
+cargo build
+```
+
+Run the following command to visualize modular arithmetic:
+
+```sh
+cargo run <operand> <modulus>
+```
+
+Example:
+```sh
+cargo run 7 4
+```
 
 ## Additional Notes
