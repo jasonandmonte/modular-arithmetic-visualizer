@@ -119,13 +119,14 @@ fn view(app: &App, model: &Model, frame: Frame) {
 
 /// TODO: Function docs
 fn draw_rings(draw: &Draw, model: &Model, time: usize) {
-    // FIXME: Account for ring levels
-    let ring_opacity = 1.0; //if time == points.len() { 1.0 } else { 0.0 };
-
+    let num_rings = model.integer.div_ceil(model.modulus) as usize;
+    let ppr = model.points.len() / num_rings;
     // NOTE: nannou layers shapes based on when they are drawn.
     // To have rings display below the integer shapes they must be drawn first.
     // Draw largest first so it is the base layer
-    for nr in (0..model.integer.div_ceil(model.modulus)).rev() {
+    for nr in (0..num_rings).rev() {
+        let ring_opacity = if (time / ppr) >= nr { 1.0 } else { 0.0 };
+        
         draw.ellipse()  
             .radius(CIRCLE_SIZE / 3.0 * (model.modulus as f32) + (nr as f32) * RING_SPACING)
             .no_fill()
@@ -142,7 +143,7 @@ fn draw_points(draw: &Draw, model: &Model, time: usize) {
         }
     
         let Point { x, y, label } = point;
-    
+
         draw.ellipse()
             .w_h(CIRCLE_SIZE, CIRCLE_SIZE)
             .x_y(*x, *y)
