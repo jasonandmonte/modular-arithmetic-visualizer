@@ -1,55 +1,66 @@
-use std::env;
 use nannou::prelude::*;
+use std::env;
 
 const CIRCLE_SIZE: f32 = 32.0;
 const RING_SPACING: f32 = 40.0;
+const RING_RADIUS_SCALE : f32 = 4.0;
 
 struct Model {
-    integer: u32,
+    // Natural numbers { 0, 1, 2, ... }
+    natural: u32,
     modulus: u32,
     result: u32,
     points: Vec<Point>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Point {
     x: f32,
     y: f32,
-    label: String,
+    label: u32,
 }
 
 fn main() {
-    nannou::app(model)
-        .event(event)
-        .simple_window(view)
-        .run();
+    let args: Vec<String> = env::args().collect();
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        println!("Usage: {} <natural> <modulus>", args[0]);
+        std::process::exit(0);
+    }
+
+    nannou::app(model).simple_window(view).run();
 }
 
 fn model(_app: &App) -> Model {
-    let (integer, modulus) = parse_args();
-    // TODO: Add --help flag
+    let (natural, modulus) = parse_args(env::args().collect());
 
     Model {
-        integer,
+        natural,
         modulus,
-        result: integer % modulus,
-        points: generate_points(integer, modulus),
+        result: natural % modulus,
+        points: generate_points(natural, modulus),
     }
 }
 
-/// TODO:
-fn parse_args() -> (u32, u32) {
-    let args: Vec<String> = env::args().collect();
-
+/// Parses command-line arguments into a tuple of a natural number and a modulus.
+///
+/// # Examples
+///
+/// ```rust
+/// let args = vec!["program".to_string(), "12".to_string(), "5".to_string()];
+/// let (natural, modulus) = parse_args(args);
+/// assert_eq!(natural, 12);
+/// assert_eq!(modulus, 5);
+/// ```
+fn parse_args(args: Vec<String>) -> (u32, u32) {
     if args.len() < 3 {
-        eprintln!("Usage: {} <integer> <modulus>", args[0]);
+        eprintln!("Usage: {} <natural> <modulus>", args[0]);
         std::process::exit(1);
     }
 
-    let integer: u32 = match args[1].parse() {
+    let natural: u32 = match args[1].parse() {
         Ok(n) => n,
         Err(_) => {
-            eprintln!("Error: '{}' is not a valid integer (n >= 0).", args[1]);
+            eprintln!("Error: '{}' is not a valid number (n >= 0).", args[1]);
             std::process::exit(1);
         }
     };
@@ -57,102 +68,178 @@ fn parse_args() -> (u32, u32) {
     let modulus: u32 = match args[2].parse() {
         Ok(n) => n,
         Err(_) => {
-            eprintln!("Error: '{}' is not a valid integer (n >= 0).", args[2]);
+            eprintln!("Error: '{}' is not a valid number (n >= 0).", args[2]);
             std::process::exit(1);
         }
     };
 
-    (integer, modulus)
+    (natural, modulus)
 }
 
+/// Creates points with x,y coordinates and labels to be displayed.
 ///
-fn generate_points(integer: u32, modulus: u32) -> Vec<Point> {
-    // TODO: Create a function
-    let num_rings = integer.div_ceil(modulus);
-
-    // Determine coordinates for each point
-    // FIXME: magic numbers
-    let ring_radius = CIRCLE_SIZE / 3.0 * (modulus as f32);
-    let ring_points  = modulus;
-    let stride = 360 / ring_points;
+/// # Examples
+///
+/// ```rust
+/// let natural = 12
+/// let modulus = 5
+/// let points = generate_points(natural, modulus);
+/// assert_eq!(points[0], Point {x: 0.0, y: 32.0, label: 0})
+/// ```
+fn generate_points(natural: u32, modulus: u32) -> Vec<Point> {
+    // NOTE: When evenly divides we want an extra ring (3 mod 3 should be 2 rings)
+    let num_rings = (natural + 1).div_ceil(modulus);
+    let ring_radius = CIRCLE_SIZE * (modulus as f32) / RING_RADIUS_SCALE ;
+    let stride = 360 / modulus;
     let mut points = vec![];
 
     let mut number: u32 = 0;
     for nr in 0..num_rings {
         let scale_factor = ring_radius + (nr as f32) * RING_SPACING;
-        // Map over an array of integers from 0 to 360 to represent the degrees in a circle.
+        // Map over an array of naturals from 0 to 360 to represent the degrees
+        // in a circle.
         for i in (0..360).step_by(stride as usize) {
             let radian = deg_to_rad(i as f32);
-            // Get the sine of the radian to find the x co-ordinate of this point of the circle
-            // and multiply it by the ring radius.
+            // Get the sine of the radian to find the x co-ordinate of this
+            // point of the circle.
             let x = radian.sin() * scale_factor;
-            // Do the same with cosine to find the y co-ordinate.
             let y = radian.cos() * scale_factor;
-            // Construct and return a point object with a color.
-            // (x,y)
             points.push(Point {
                 x,
                 y,
-                label: number.to_string(),
+                label: number,
             });
-            
+
             number += 1;
         }
     }
     points
 }
 
-fn event(_app: &App, _model: &mut Model, _event: Event) {}
-
 fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
     draw.background().color(WHITE);
 
-    // Show a point every second
-    let time = (app.time as usize).min(model.points.len());
+    // Draw a point every second
+    let visible_points = (app.time as usize).min(model.points.len());
 
-    draw_rings(&draw, model, time);
-    draw_points(&draw, model, time);
+    // NOTE: nannou layers shapes based on when they are drawn.
+    // To have rings display below the number circles they must be drawn first.
+    draw_rings(&draw, model, visible_points);
+    draw_points(&draw, model, visible_points);
+
+    let time = app.time as usize;
+    draw_arrow_reduction(&draw, model, time);
 
     draw.to_frame(app, &frame).unwrap();
 }
 
-/// TODO: Function docs
-fn draw_rings(draw: &Draw, model: &Model, time: usize) {
-    let num_rings = model.integer.div_ceil(model.modulus) as usize;
+/// Draws concentric rings based on the number of visible points.
+///
+/// The number of rings is determined by `ceil[(natural + 1) / modulus`.
+/// Rings are drawn in reverse order to accommodate nannou's overlay,
+/// with opacity determined by the number of visible points.
+fn draw_rings(draw: &Draw, model: &Model, visible_points: usize) {
+    // NOTE: When evenly divides we want an extra ring (3 mod 3 should be 2 rings)
+    let num_rings = (model.natural + 1).div_ceil(model.modulus) as usize;
     let ppr = model.points.len() / num_rings;
-    // NOTE: nannou layers shapes based on when they are drawn.
-    // To have rings display below the integer shapes they must be drawn first.
-    // Draw largest first so it is the base layer
+
+    // Draw largest ring first so it is the base layer.
     for nr in (0..num_rings).rev() {
-        let ring_opacity = if (time / ppr) >= nr { 1.0 } else { 0.0 };
-        
-        draw.ellipse()  
-            .radius(CIRCLE_SIZE / 3.0 * (model.modulus as f32) + (nr as f32) * RING_SPACING)
+        // See the ring if the number of points is over the points per ring
+        let ring_opacity = if (visible_points.saturating_sub(1) / ppr) >= nr {
+            1.0
+        } else {
+            0.0
+        };
+        let dynamic_blue = rgba(0.0, 0.75, 1.0, ring_opacity);
+        let scale_factor = CIRCLE_SIZE * (model.modulus as f32) / RING_RADIUS_SCALE  + (nr as f32) * RING_SPACING;
+        draw.ellipse()
+            .radius(scale_factor)
             .no_fill()
-            .stroke(rgba(0.0, 0.75, 1.0, ring_opacity))
+            .stroke(dynamic_blue)
             .stroke_weight(2.0);
     }
 }
 
-/// TODO:
-fn draw_points(draw: &Draw, model: &Model, time: usize) {
+/// Draw points with their associated number label at the center.
+///
+/// Each point is represented as a small circle with a number label.
+/// Points are drawn progressively based on the visible points constraint.
+fn draw_points(draw: &Draw, model: &Model, visible_points: usize) {
     for (i, point) in model.points.iter().enumerate() {
-        if i >= time {
+        if i >= visible_points {
             break;
         }
-    
+
         let Point { x, y, label } = point;
 
         draw.ellipse()
             .w_h(CIRCLE_SIZE, CIRCLE_SIZE)
             .x_y(*x, *y)
             .stroke(BLACK)
-            .stroke_weight(1.0);
-    
-        draw.text(label.as_str())
+            .stroke_weight(1.5);
+
+        draw.text(label.to_string().as_str())
             .x_y(*x, *y)
             .color(BLACK)
-            .font_size(14);
+            .font_size(10);
+    }
+}
+
+/// Draws an arrow pointing from the outermost matching point to the innermost matching point.
+///
+/// Visualizes the reduction by drawing an arrow from the natural number on the
+/// outer ring to its associated value on the innermost ring after being
+/// reduced by the modulus.
+fn draw_arrow_reduction(draw: &Draw, model: &Model, time: usize) {
+    if time <= model.points.len() {
+        return;
+    }
+
+    let matching_points: Vec<&Point> = model
+        .points
+        .iter()
+        .filter(|point| point.label % model.modulus == model.result)
+        .collect();
+    let transparent_orange = rgba8(245, 173, 66, 150);
+
+    match (matching_points.first(), matching_points.last()) {
+        (Some(inner_point), Some(outer_point)) => {
+            draw.arrow()
+                .color(transparent_orange) // Transparent orange
+                .stroke_weight(8.0)
+                .start(pt2(outer_point.x, outer_point.y))
+                .end(pt2(inner_point.x, inner_point.y));
+        }
+        _ => {
+            eprintln!("No matching points found for the modulus reduction.");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_args() {
+        let args = vec!["prog".to_string(), "7".to_string(), "3".to_string()];
+        assert!(matches!(parse_args(args), (7, 3)));
+    }
+
+    #[test]
+    fn test_generate_points() {
+        let natural = 7;
+        let modulus = 3;
+        let points = generate_points(natural, modulus);
+        let p1 = Point {
+            x: 0.0,
+            y: 32.0,
+            label: 0,
+        };
+        assert_eq!(points[0], p1);
+        // last point on the outer ring
+        assert_eq!(points.last().unwrap().label, 8);
     }
 }
