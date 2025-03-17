@@ -1,5 +1,5 @@
-use clap::Parser;
 use nannou::prelude::*;
+use nannou_egui::{egui, Egui};
 
 const CIRCLE_SIZE: f32 = 32.0;
 const RING_SPACING: f32 = 40.0;
@@ -12,6 +12,11 @@ struct Model {
     modulus: u32,
     result: u32,
     points: Vec<Point>,
+    egui: Egui,
+    time: f32,
+    new_natural: u32,
+    new_modulus: u32,
+    new_cycle: bool,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -26,45 +31,42 @@ struct ArrowPoints {
     end: Point2,
 }
 
-#[derive(Debug, Parser)]
-struct Args {
-    /// Enable cycle mode
-    #[arg(short = 'c', long = "cycle")]
-    cycle: bool,
-    /// Operand (reduction or cycle addition)
-    #[arg(allow_hyphen_values = true, value_parser = validate_number)]
-    natural: u32,
-    /// The modulus value
-    #[arg(allow_hyphen_values = true, value_parser = validate_number)]
-    modulus: u32,
-}
-
 fn main() {
     // --help side effect
-    Args::parse();
-    nannou::app(model).simple_window(view).run();
+    // Args::parse();
+    nannou::app(model).update(update).run();
 }
 
-fn model(_app: &App) -> Model {
-    // let (cycle, natural, modulus) = parse_args(Args::parse());
-    let args = Args::parse();
-    let (cycle, natural, modulus) = (args.cycle, args.natural, args.modulus);
+fn model(app: &App) -> Model {
+        // Create window
+        let window_id = app
+        .new_window()
+        .view(view)
+        .raw_event(raw_window_event)
+        .build()
+        .unwrap();
+    let window = app.window(window_id).unwrap();
 
+    let egui = Egui::from_window(&window);
+
+    // Start with a basic drawing
     Model {
-        cycle,
-        natural,
-        modulus,
-        result: natural % modulus,
-        points: generate_points(cycle, natural, modulus),
+        egui,
+        cycle: false,
+        natural: 7,
+        modulus: 3,
+        result: 7 % 3,
+        points: generate_points(false, 7, 3),
+        time: 0.0,
+        new_natural: 7,
+        new_modulus: 3,
+        new_cycle: false,
     }
 }
 
-/// TODO:
-fn validate_number(s: &str) -> Result<u32, String> {
-    match s.parse::<u32>() {
-        Ok(n) => Ok(n),
-        Err(_) => Err(format!("error: '{}' must be a 0+ number", s)),
-    }
+/// Handles window events and forwards them to the egui instance.
+fn raw_window_event(_app: &App, model: &mut Model, event: &nannou::winit::event::WindowEvent) {
+    model.egui.handle_raw_event(event);
 }
 
 /// Creates points with x,y coordinates and labels to be displayed.
@@ -120,27 +122,65 @@ fn generate_points(cycle: bool, natural: u32, modulus: u32) -> Vec<Point> {
     points
 }
 
+
+fn update(_app: & App, model: &mut Model, update: Update) {
+    let egui = &mut model.egui;
+    egui.set_elapsed_time(update.since_start);
+    let ctx = egui.begin_frame();
+    model.time += 0.04;
+
+    egui::Window::new("Configuration").show(&ctx, |ui| {
+        // Resolution slider
+        ui.label("Operand:");
+        ui.add(egui::Slider::new(&mut model.new_natural, 1..=40));
+
+        // Scale slider
+        ui.label("Modulus:");
+        ui.add(egui::Slider::new(&mut model.new_modulus, 1..=40));
+
+        if ui.add(egui::RadioButton::new(!model.new_cycle, "Calculation")).clicked() {
+            model.new_cycle = false;
+        }
+        if ui.add(egui::RadioButton::new(model.new_cycle, "Cycles")).clicked() {
+            model.new_cycle = true;
+        }
+
+        // Random color button
+        let clicked = ui.button("Generate").clicked();
+
+        if clicked {
+            model.cycle = model.new_cycle;
+            model.natural = model.new_natural;
+            model.modulus = model.new_modulus;
+            model.result = model.natural % model.modulus;
+            model.points = generate_points(model.cycle, model.natural, model.modulus);
+            model.time = 0.0;
+        }
+    });
+
+}
+
 fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
     draw.background().color(WHITE);
 
-    // Draw a point every second
-    let visible_points = (app.time as usize).min(model.points.len());
+    // Draw elements based on counter modified in update()
+    let time= model.time as usize;
 
     if model.cycle {
         draw_points(&draw, model, model.points.len());
-        draw_cycle_arrows(&draw, model, visible_points);
+        draw_cycle_arrows(&draw, model, time);
     } else {
         // NOTE: nannou layers shapes based on when they are drawn.
         // To have rings display below the number circles they must be drawn first.
-        draw_rings(&draw, model, visible_points);
-        draw_points(&draw, model, visible_points);
+        draw_rings(&draw, model, time);
+        draw_points(&draw, model, time);
 
-        let time = app.time as usize;
         draw_arrow_reduction(&draw, model, time);
     }
 
     draw.to_frame(app, &frame).unwrap();
+    model.egui.draw_to_frame(&frame).unwrap();
 }
 
 /// Draws concentric rings based on the number of visible points.
@@ -235,14 +275,12 @@ fn draw_arrow_reduction(draw: &Draw, model: &Model, time: usize) {
 /// shows the cycles in a modulo.
 fn draw_cycle_arrows(draw: &Draw, model: &Model, time: usize) {
     for (i, start_point) in model.points.iter().enumerate() {
-        // Draw one arrow per second
         if i >= time {
             break;
         }
 
         let end = (i + model.natural as usize) % model.modulus as usize;
         let end_point = &model.points[end];
-
         let arrow_points = shrink_arrow(start_point, end_point);
 
         draw.arrow()
