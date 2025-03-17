@@ -5,4 +5,5 @@ authors = ["Jason Gonzales"]
 edition = "2021"
 
 [dependencies]
+clap = { version = "4.5.32", features = ["derive"] }
 nannou = "0.19"
