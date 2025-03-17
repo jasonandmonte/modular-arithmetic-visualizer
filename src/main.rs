@@ -99,7 +99,8 @@ fn generate_points(cycle: bool, natural: u32, modulus: u32) -> Vec<Point> {
         // in a circle.
         for i in (0..360).step_by(stride) {
             // For some numbers the stride can fit an extra erroneous point
-            if cycle && number >= modulus {
+            let current_ring_max = modulus * (nr+1);
+            if number >= current_ring_max {
                 break;
             }
             let radian = deg_to_rad(i as f32);
