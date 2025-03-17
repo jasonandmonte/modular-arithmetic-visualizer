@@ -1,79 +1,65 @@
+use clap::Parser;
 use nannou::prelude::*;
-use std::env;
 
 const CIRCLE_SIZE: f32 = 32.0;
 const RING_SPACING: f32 = 40.0;
-const RING_RADIUS_SCALE : f32 = 4.0;
+const RING_RADIUS_SCALE: f32 = 4.0;
 
 struct Model {
     // Natural numbers { 0, 1, 2, ... }
+    cycle: bool,
     natural: u32,
     modulus: u32,
     result: u32,
     points: Vec<Point>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 struct Point {
     x: f32,
     y: f32,
     label: u32,
 }
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        println!("Usage: {} <natural> <modulus>", args[0]);
-        std::process::exit(0);
-    }
+#[derive(Debug, Parser)]
+struct Args {
+    /// Enable cycle mode
+    #[arg(short = 'c', long = "cycle")]
+    cycle: bool,
+    /// Operand (reduction or cycle addition)
+    #[arg(allow_hyphen_values = true, value_parser = validate_number)]
+    natural: u32,
+    /// The modulus value
+    #[arg(allow_hyphen_values = true, value_parser = validate_number)]
+    modulus: u32,
+}
 
+fn main() {
+    // --help side effect
+    Args::parse();
     nannou::app(model).simple_window(view).run();
 }
 
 fn model(_app: &App) -> Model {
-    let (natural, modulus) = parse_args(env::args().collect());
+    // let (cycle, natural, modulus) = parse_args(Args::parse());
+    let args = Args::parse();
+    let (cycle, natural, modulus) = (args.cycle, args.natural, args.modulus);
 
     Model {
+        cycle,
         natural,
         modulus,
         result: natural % modulus,
-        points: generate_points(natural, modulus),
+        points: generate_points(cycle, natural, modulus),
     }
 }
 
-/// Parses command-line arguments into a tuple of a natural number and a modulus.
-///
-/// # Examples
-///
-/// ```rust
-/// let args = vec!["program".to_string(), "12".to_string(), "5".to_string()];
-/// let (natural, modulus) = parse_args(args);
-/// assert_eq!(natural, 12);
-/// assert_eq!(modulus, 5);
-/// ```
-fn parse_args(args: Vec<String>) -> (u32, u32) {
-    if args.len() < 3 {
-        eprintln!("Usage: {} <natural> <modulus>", args[0]);
-        std::process::exit(1);
+/// TODO:
+fn validate_number(s: &str) -> Result<u32, String> {
+    match s.parse::<u32>() {
+        Ok(n) => Ok(n),
+        Err(_) => Err(format!("error: '{}' must be a 0+ number", s)),
     }
-
-    let natural: u32 = match args[1].parse() {
-        Ok(n) => n,
-        Err(_) => {
-            eprintln!("Error: '{}' is not a valid number (n >= 0).", args[1]);
-            std::process::exit(1);
-        }
-    };
-
-    let modulus: u32 = match args[2].parse() {
-        Ok(n) => n,
-        Err(_) => {
-            eprintln!("Error: '{}' is not a valid number (n >= 0).", args[2]);
-            std::process::exit(1);
-        }
-    };
-
-    (natural, modulus)
 }
 
 /// Creates points with x,y coordinates and labels to be displayed.
@@ -86,11 +72,19 @@ fn parse_args(args: Vec<String>) -> (u32, u32) {
 /// let points = generate_points(natural, modulus);
 /// assert_eq!(points[0], Point {x: 0.0, y: 32.0, label: 0})
 /// ```
-fn generate_points(natural: u32, modulus: u32) -> Vec<Point> {
+fn generate_points(cycle: bool, natural: u32, modulus: u32) -> Vec<Point> {
     // NOTE: When evenly divides we want an extra ring (3 mod 3 should be 2 rings)
-    let num_rings = (natural + 1).div_ceil(modulus);
-    let ring_radius = CIRCLE_SIZE * (modulus as f32) / RING_RADIUS_SCALE ;
-    let stride = 360 / modulus;
+    let num_rings = if cycle {
+        1
+    } else {
+        (natural + 1).div_ceil(modulus)
+    };
+    let ring_radius = if cycle {
+        320.0
+    } else {
+        CIRCLE_SIZE * (modulus as f32) / RING_RADIUS_SCALE
+    };
+    let stride = 360 / modulus as usize;
     let mut points = vec![];
 
     let mut number: u32 = 0;
@@ -98,7 +92,11 @@ fn generate_points(natural: u32, modulus: u32) -> Vec<Point> {
         let scale_factor = ring_radius + (nr as f32) * RING_SPACING;
         // Map over an array of naturals from 0 to 360 to represent the degrees
         // in a circle.
-        for i in (0..360).step_by(stride as usize) {
+        for i in (0..360).step_by(stride) {
+            // For some numbers the stride can fit an extra erroneous point
+            if cycle && number >= modulus {
+                break;
+            }
             let radian = deg_to_rad(i as f32);
             // Get the sine of the radian to find the x co-ordinate of this
             // point of the circle.
@@ -123,13 +121,18 @@ fn view(app: &App, model: &Model, frame: Frame) {
     // Draw a point every second
     let visible_points = (app.time as usize).min(model.points.len());
 
-    // NOTE: nannou layers shapes based on when they are drawn.
-    // To have rings display below the number circles they must be drawn first.
-    draw_rings(&draw, model, visible_points);
-    draw_points(&draw, model, visible_points);
+    if model.cycle {
+        draw_points(&draw, model, model.points.len());
+        draw_cycle_arrows(&draw, model, visible_points);
+    } else {
+        // NOTE: nannou layers shapes based on when they are drawn.
+        // To have rings display below the number circles they must be drawn first.
+        draw_rings(&draw, model, visible_points);
+        draw_points(&draw, model, visible_points);
 
-    let time = app.time as usize;
-    draw_arrow_reduction(&draw, model, time);
+        let time = app.time as usize;
+        draw_arrow_reduction(&draw, model, time);
+    }
 
     draw.to_frame(app, &frame).unwrap();
 }
@@ -153,7 +156,8 @@ fn draw_rings(draw: &Draw, model: &Model, visible_points: usize) {
             0.0
         };
         let dynamic_blue = rgba(0.0, 0.75, 1.0, ring_opacity);
-        let scale_factor = CIRCLE_SIZE * (model.modulus as f32) / RING_RADIUS_SCALE  + (nr as f32) * RING_SPACING;
+        let scale_factor =
+            CIRCLE_SIZE * (model.modulus as f32) / RING_RADIUS_SCALE + (nr as f32) * RING_SPACING;
         draw.ellipse()
             .radius(scale_factor)
             .no_fill()
@@ -183,7 +187,7 @@ fn draw_points(draw: &Draw, model: &Model, visible_points: usize) {
         draw.text(label.to_string().as_str())
             .x_y(*x, *y)
             .color(BLACK)
-            .font_size(10);
+            .font_size(12);
     }
 }
 
@@ -218,28 +222,83 @@ fn draw_arrow_reduction(draw: &Draw, model: &Model, time: usize) {
     }
 }
 
+/// Draws arrows between points based on the addition of a natural number.
+///
+/// Iterates over the points in the model and draws an arrow per second and
+/// shows the cycles in a modulo.
+fn draw_cycle_arrows(draw: &Draw, model: &Model, time: usize) {
+    for (i, start_point) in model.points.iter().enumerate() {
+        // Draw one arrow per second
+        if i >= time {
+            break;
+        }
+
+        let end = (i + model.natural as usize) % model.modulus as usize;
+        let end_point = &model.points[end];
+
+        let ((start_x, start_y), (end_x, end_y)) = shrink_arrow(start_point, end_point);
+
+        draw.arrow()
+            .color(ORANGE)
+            .stroke_weight(4.0)
+            .head_width(12.0)
+            .start(pt2(start_x, start_y))
+            .end(pt2(end_x, end_y));
+    }
+}
+
+/// Shortens an arrow between two points by adjusting moving the start and end
+/// points.
+///
+/// This function applies linear interpolation (LERP) to move the start and end
+/// points closer to each other.
+fn shrink_arrow(start_point: &Point, end_point: &Point) -> ((f32, f32), (f32, f32)) {
+    // lerp: https://youtu.be/jvPPXbo87ds?si=eQEpr14Vs_9zIeH3&t=140
+    // We want to reduce the arrow to minimize overlap with points
+    let t_factor = 0.05;
+    let x1 = start_point.x + t_factor * (end_point.x - start_point.x);
+    let y1 = start_point.y + t_factor * (end_point.y - start_point.y);
+    let x2 = end_point.x - t_factor * (end_point.x - start_point.x);
+    let y2 = end_point.y - t_factor * (end_point.y - start_point.y);
+
+    ((x1, y1), (x2, y2))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_args() {
-        let args = vec!["prog".to_string(), "7".to_string(), "3".to_string()];
-        assert!(matches!(parse_args(args), (7, 3)));
-    }
-
-    #[test]
     fn test_generate_points() {
+        let cycle = false;
         let natural = 7;
         let modulus = 3;
-        let points = generate_points(natural, modulus);
+        let points = generate_points(cycle, natural, modulus);
         let p1 = Point {
             x: 0.0,
-            y: 32.0,
+            y: 24.0,
             label: 0,
         };
         assert_eq!(points[0], p1);
         // last point on the outer ring
         assert_eq!(points.last().unwrap().label, 8);
+    }
+
+    #[test]
+    fn test_scale_down_arrow_points() {
+        let p1 = Point {
+            x: 0.0,
+            y: 32.0,
+            label: 0,
+        };
+        let p2 = Point {
+            x: 0.0,
+            y: -32.0,
+            label: 1,
+        };
+        let (np1, np2) = shrink_arrow(&p1, &p2);
+
+        assert!(np1.1 < p1.y, "Should move start point down");
+        assert!(np2.1 > p2.y, "Should move end point up");
     }
 }
