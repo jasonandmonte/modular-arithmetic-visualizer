@@ -32,14 +32,12 @@ struct ArrowPoints {
 }
 
 fn main() {
-    // --help side effect
-    // Args::parse();
     nannou::app(model).update(update).run();
 }
 
 fn model(app: &App) -> Model {
-        // Create window
-        let window_id = app
+    // Create window
+    let window_id = app
         .new_window()
         .view(view)
         .raw_event(raw_window_event)
@@ -64,10 +62,83 @@ fn model(app: &App) -> Model {
     }
 }
 
+fn update(_app: &App, model: &mut Model, update: Update) {
+    let egui = &mut model.egui;
+    egui.set_elapsed_time(update.since_start);
+    let ctx = egui.begin_frame();
+    model.time += 0.04;
+
+    egui::Window::new("Configuration").show(&ctx, |ui| {
+        // Resolution slider
+        ui.label("Operand:");
+        ui.add(egui::Slider::new(&mut model.new_natural, 1..=40));
+
+        // Scale slider
+        ui.label("Modulus:");
+        ui.add(egui::Slider::new(&mut model.new_modulus, 1..=40));
+
+        if ui
+            .add(egui::RadioButton::new(!model.new_cycle, "Calculation"))
+            .clicked()
+        {
+            model.new_cycle = false;
+        }
+        if ui
+            .add(egui::RadioButton::new(model.new_cycle, "Cycles"))
+            .clicked()
+        {
+            model.new_cycle = true;
+        }
+
+        // Random color button
+        let clicked = ui.button("Generate").clicked();
+
+        if clicked {
+            model.cycle = model.new_cycle;
+            model.natural = model.new_natural;
+            model.modulus = model.new_modulus;
+            model.result = model.natural % model.modulus;
+            model.points = generate_points(model.cycle, model.natural, model.modulus);
+            model.time = 0.0;
+        }
+    });
+}
+
+fn view(app: &App, model: &Model, frame: Frame) {
+    let draw = app.draw();
+    draw.background().color(WHITE);
+
+    // Draw elements based on counter modified in update()
+    let time = model.time as usize;
+
+    if model.cycle {
+        draw_points(&draw, model, model.points.len());
+        draw_cycle_arrows(&draw, model, time);
+    } else {
+        // NOTE: nannou layers shapes based on when they are drawn.
+        // To have rings display below the number circles they must be drawn first.
+        draw_rings(&draw, model, time);
+        draw_points(&draw, model, time);
+
+        draw_arrow_reduction(&draw, model, time);
+    }
+
+    draw.to_frame(app, &frame).unwrap();
+    model.egui.draw_to_frame(&frame).unwrap();
+}
+
+//------------------------------------------------------------------------------
+// Model Helpers
+//------------------------------------------------------------------------------
+
 /// Handles window events and forwards them to the egui instance.
 fn raw_window_event(_app: &App, model: &mut Model, event: &nannou::winit::event::WindowEvent) {
     model.egui.handle_raw_event(event);
 }
+
+//------------------------------------------------------------------------------
+// Update Helpers
+//------------------------------------------------------------------------------
 
 /// Creates points with x,y coordinates and labels to be displayed.
 ///
@@ -101,7 +172,7 @@ fn generate_points(cycle: bool, natural: u32, modulus: u32) -> Vec<Point> {
         // in a circle.
         for i in (0..360).step_by(stride) {
             // For some numbers the stride can fit an extra erroneous point
-            let current_ring_max = modulus * (nr+1);
+            let current_ring_max = modulus * (nr + 1);
             if number >= current_ring_max {
                 break;
             }
@@ -122,66 +193,9 @@ fn generate_points(cycle: bool, natural: u32, modulus: u32) -> Vec<Point> {
     points
 }
 
-
-fn update(_app: & App, model: &mut Model, update: Update) {
-    let egui = &mut model.egui;
-    egui.set_elapsed_time(update.since_start);
-    let ctx = egui.begin_frame();
-    model.time += 0.04;
-
-    egui::Window::new("Configuration").show(&ctx, |ui| {
-        // Resolution slider
-        ui.label("Operand:");
-        ui.add(egui::Slider::new(&mut model.new_natural, 1..=40));
-
-        // Scale slider
-        ui.label("Modulus:");
-        ui.add(egui::Slider::new(&mut model.new_modulus, 1..=40));
-
-        if ui.add(egui::RadioButton::new(!model.new_cycle, "Calculation")).clicked() {
-            model.new_cycle = false;
-        }
-        if ui.add(egui::RadioButton::new(model.new_cycle, "Cycles")).clicked() {
-            model.new_cycle = true;
-        }
-
-        // Random color button
-        let clicked = ui.button("Generate").clicked();
-
-        if clicked {
-            model.cycle = model.new_cycle;
-            model.natural = model.new_natural;
-            model.modulus = model.new_modulus;
-            model.result = model.natural % model.modulus;
-            model.points = generate_points(model.cycle, model.natural, model.modulus);
-            model.time = 0.0;
-        }
-    });
-
-}
-
-fn view(app: &App, model: &Model, frame: Frame) {
-    let draw = app.draw();
-    draw.background().color(WHITE);
-
-    // Draw elements based on counter modified in update()
-    let time= model.time as usize;
-
-    if model.cycle {
-        draw_points(&draw, model, model.points.len());
-        draw_cycle_arrows(&draw, model, time);
-    } else {
-        // NOTE: nannou layers shapes based on when they are drawn.
-        // To have rings display below the number circles they must be drawn first.
-        draw_rings(&draw, model, time);
-        draw_points(&draw, model, time);
-
-        draw_arrow_reduction(&draw, model, time);
-    }
-
-    draw.to_frame(app, &frame).unwrap();
-    model.egui.draw_to_frame(&frame).unwrap();
-}
+//------------------------------------------------------------------------------
+// View Helpers
+//------------------------------------------------------------------------------
 
 /// Draws concentric rings based on the number of visible points.
 ///
@@ -256,7 +270,7 @@ fn draw_arrow_reduction(draw: &Draw, model: &Model, time: usize) {
 
     match (matching_points.first(), matching_points.last()) {
         (Some(inner_point), Some(outer_point)) => {
-            let arrow_points= shrink_arrow(outer_point, inner_point);
+            let arrow_points = shrink_arrow(outer_point, inner_point);
 
             draw.arrow()
                 .color(transparent_orange) // Transparent orange
@@ -307,7 +321,7 @@ fn shrink_arrow(start_point: &Point, end_point: &Point) -> ArrowPoints {
 
     ArrowPoints {
         start: pt2(x1, y1),
-        end: pt2(x2, y2)
+        end: pt2(x2, y2),
     }
 }
 
