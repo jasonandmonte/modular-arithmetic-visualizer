@@ -21,6 +21,11 @@ struct Point {
     label: u32,
 }
 
+struct ArrowPoints {
+    start: Point2,
+    end: Point2,
+}
+
 #[derive(Debug, Parser)]
 struct Args {
     /// Enable cycle mode
@@ -210,11 +215,12 @@ fn draw_arrow_reduction(draw: &Draw, model: &Model, time: usize) {
 
     match (matching_points.first(), matching_points.last()) {
         (Some(inner_point), Some(outer_point)) => {
+            let arrow_points= shrink_arrow(outer_point, inner_point);
+
             draw.arrow()
                 .color(transparent_orange) // Transparent orange
                 .stroke_weight(8.0)
-                .start(pt2(outer_point.x, outer_point.y))
-                .end(pt2(inner_point.x, inner_point.y));
+                .points(arrow_points.start, arrow_points.end);
         }
         _ => {
             eprintln!("No matching points found for the modulus reduction.");
@@ -236,14 +242,13 @@ fn draw_cycle_arrows(draw: &Draw, model: &Model, time: usize) {
         let end = (i + model.natural as usize) % model.modulus as usize;
         let end_point = &model.points[end];
 
-        let ((start_x, start_y), (end_x, end_y)) = shrink_arrow(start_point, end_point);
+        let arrow_points = shrink_arrow(start_point, end_point);
 
         draw.arrow()
             .color(ORANGE)
             .stroke_weight(4.0)
             .head_width(12.0)
-            .start(pt2(start_x, start_y))
-            .end(pt2(end_x, end_y));
+            .points(arrow_points.start, arrow_points.end);
     }
 }
 
@@ -252,7 +257,7 @@ fn draw_cycle_arrows(draw: &Draw, model: &Model, time: usize) {
 ///
 /// This function applies linear interpolation (LERP) to move the start and end
 /// points closer to each other.
-fn shrink_arrow(start_point: &Point, end_point: &Point) -> ((f32, f32), (f32, f32)) {
+fn shrink_arrow(start_point: &Point, end_point: &Point) -> ArrowPoints {
     // lerp: https://youtu.be/jvPPXbo87ds?si=eQEpr14Vs_9zIeH3&t=140
     // We want to reduce the arrow to minimize overlap with points
     let t_factor = 0.05;
@@ -261,7 +266,10 @@ fn shrink_arrow(start_point: &Point, end_point: &Point) -> ((f32, f32), (f32, f3
     let x2 = end_point.x - t_factor * (end_point.x - start_point.x);
     let y2 = end_point.y - t_factor * (end_point.y - start_point.y);
 
-    ((x1, y1), (x2, y2))
+    ArrowPoints {
+        start: pt2(x1, y1),
+        end: pt2(x2, y2)
+    }
 }
 
 #[cfg(test)]
@@ -296,9 +304,9 @@ mod tests {
             y: -32.0,
             label: 1,
         };
-        let (np1, np2) = shrink_arrow(&p1, &p2);
+        let arrow_points = shrink_arrow(&p1, &p2);
 
-        assert!(np1.1 < p1.y, "Should move start point down");
-        assert!(np2.1 > p2.y, "Should move end point up");
+        assert!(arrow_points.start.y < p1.y, "Should move start point down");
+        assert!(arrow_points.end.y > p2.y, "Should move end point up");
     }
 }
