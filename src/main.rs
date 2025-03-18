@@ -5,29 +5,46 @@ const CIRCLE_SIZE: f32 = 32.0;
 const RING_SPACING: f32 = 40.0;
 const RING_RADIUS_SCALE: f32 = 4.0;
 
-struct Model {
-    // Natural numbers { 0, 1, 2, ... }
-    cycle: bool,
-    natural: u32,
-    modulus: u32,
-    result: u32,
-    points: Vec<Point>,
-    egui: Egui,
-    time: f32,
-    new_natural: u32,
-    new_modulus: u32,
-    new_cycle: bool,
-}
-
+/// Holds geometry for the number representation.
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct Point {
+    /// X coordinate.
     x: f32,
+    /// Y coordinate.
     y: f32,
+    /// Number to be displayed within the point.
     label: u32,
 }
 
+/// State of the application for drawing modular arithmetic.
+struct Model {
+    /// Show cycles within mod group.
+    cycle: bool,
+    /// Natural numbers. { 0, 1, 2, ... }
+    natural: u32,
+    /// Base of modular arithmetic.
+    modulus: u32,
+    /// Result of the mod operation.
+    result: u32,
+    /// Points with coordinates.
+    points: Vec<Point>,
+    /// User interface component.
+    egui: Egui,
+    /// Counter for drawing animations.
+    time: f32,
+    /// Update natural from UI.
+    new_natural: u32,
+    /// Update modulus from UI.
+    new_modulus: u32,
+    /// Update cycle from UI.
+    new_cycle: bool,
+}
+
+/// Points to determine the an arrow's direction
 struct ArrowPoints {
+    /// Starting point.
     start: Point2,
+    /// Ending point.
     end: Point2,
 }
 
@@ -35,6 +52,7 @@ fn main() {
     nannou::app(model).update(update).run();
 }
 
+/// Configures the starting state for the drawing.
 fn model(app: &App) -> Model {
     // Create window
     let window_id = app
@@ -44,7 +62,6 @@ fn model(app: &App) -> Model {
         .build()
         .unwrap();
     let window = app.window(window_id).unwrap();
-
     let egui = Egui::from_window(&window);
 
     // Start with a basic drawing
@@ -62,6 +79,7 @@ fn model(app: &App) -> Model {
     }
 }
 
+/// Handles changes from the user interface.
 fn update(_app: &App, model: &mut Model, update: Update) {
     let egui = &mut model.egui;
     egui.set_elapsed_time(update.since_start);
@@ -69,11 +87,9 @@ fn update(_app: &App, model: &mut Model, update: Update) {
     model.time += 0.04;
 
     egui::Window::new("Configuration").show(&ctx, |ui| {
-        // Resolution slider
         ui.label("Operand:");
         ui.add(egui::Slider::new(&mut model.new_natural, 1..=40));
 
-        // Scale slider
         ui.label("Modulus:");
         ui.add(egui::Slider::new(&mut model.new_modulus, 1..=40));
 
@@ -90,37 +106,34 @@ fn update(_app: &App, model: &mut Model, update: Update) {
             model.new_cycle = true;
         }
 
-        // Random color button
+        // Regenerate the drawing
         let clicked = ui.button("Generate").clicked();
-
         if clicked {
             model.cycle = model.new_cycle;
             model.natural = model.new_natural;
             model.modulus = model.new_modulus;
             model.result = model.natural % model.modulus;
             model.points = generate_points(model.cycle, model.natural, model.modulus);
+            // Reset time
             model.time = 0.0;
         }
     });
 }
 
+/// Presents drawing to the window.
 fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
     draw.background().color(WHITE);
 
-    // Draw elements based on counter modified in update()
-    let time = model.time as usize;
-
     if model.cycle {
-        draw_points(&draw, model, model.points.len());
-        draw_cycle_arrows(&draw, model, time);
+        draw_points(&draw, model);
+        draw_cycle_arrows(&draw, model);
     } else {
         // NOTE: nannou layers shapes based on when they are drawn.
         // To have rings display below the number circles they must be drawn first.
-        draw_rings(&draw, model, time);
-        draw_points(&draw, model, time);
-
-        draw_arrow_reduction(&draw, model, time);
+        draw_rings(&draw, model);
+        draw_points(&draw, model);
+        draw_arrow_reduction(&draw, model);
     }
 
     draw.to_frame(app, &frame).unwrap();
@@ -202,7 +215,7 @@ fn generate_points(cycle: bool, natural: u32, modulus: u32) -> Vec<Point> {
 /// The number of rings is determined by `ceil[(natural + 1) / modulus`.
 /// Rings are drawn in reverse order to accommodate nannou's overlay,
 /// with opacity determined by the number of visible points.
-fn draw_rings(draw: &Draw, model: &Model, visible_points: usize) {
+fn draw_rings(draw: &Draw, model: &Model) {
     // NOTE: When evenly divides we want an extra ring (3 mod 3 should be 2 rings)
     let num_rings = (model.natural + 1).div_ceil(model.modulus) as usize;
     let ppr = model.points.len() / num_rings;
@@ -210,7 +223,7 @@ fn draw_rings(draw: &Draw, model: &Model, visible_points: usize) {
     // Draw largest ring first so it is the base layer.
     for nr in (0..num_rings).rev() {
         // See the ring if the number of points is over the points per ring
-        let ring_opacity = if (visible_points.saturating_sub(1) / ppr) >= nr {
+        let ring_opacity = if ((model.time as usize).saturating_sub(1) / ppr) >= nr {
             1.0
         } else {
             0.0
@@ -230,10 +243,11 @@ fn draw_rings(draw: &Draw, model: &Model, visible_points: usize) {
 ///
 /// Each point is represented as a small circle with a number label.
 /// Points are drawn progressively based on the visible points constraint.
-fn draw_points(draw: &Draw, model: &Model, visible_points: usize) {
+fn draw_points(draw: &Draw, model: &Model) {
     for (i, point) in model.points.iter().enumerate() {
-        if i >= visible_points {
-            break;
+        // We want all points to be drawn for a cycle
+        if !model.cycle && i >= model.time as usize {
+            return;
         }
 
         let Point { x, y, label } = point;
@@ -256,8 +270,8 @@ fn draw_points(draw: &Draw, model: &Model, visible_points: usize) {
 /// Visualizes the reduction by drawing an arrow from the natural number on the
 /// outer ring to its associated value on the innermost ring after being
 /// reduced by the modulus.
-fn draw_arrow_reduction(draw: &Draw, model: &Model, time: usize) {
-    if time <= model.points.len() {
+fn draw_arrow_reduction(draw: &Draw, model: &Model) {
+    if model.time as usize <= model.points.len() {
         return;
     }
 
@@ -287,9 +301,9 @@ fn draw_arrow_reduction(draw: &Draw, model: &Model, time: usize) {
 ///
 /// Iterates over the points in the model and draws an arrow per second and
 /// shows the cycles in a modulo.
-fn draw_cycle_arrows(draw: &Draw, model: &Model, time: usize) {
+fn draw_cycle_arrows(draw: &Draw, model: &Model) {
     for (i, start_point) in model.points.iter().enumerate() {
-        if i >= time {
+        if i >= model.time as usize {
             break;
         }
 
@@ -331,22 +345,25 @@ mod tests {
 
     #[test]
     fn test_generate_points() {
-        let cycle = false;
-        let natural = 7;
-        let modulus = 3;
-        let points = generate_points(cycle, natural, modulus);
-        let p1 = Point {
-            x: 0.0,
-            y: 24.0,
-            label: 0,
-        };
-        assert_eq!(points[0], p1);
-        // last point on the outer ring
-        assert_eq!(points.last().unwrap().label, 8);
+        let test_cases = vec![
+            (false, 7, 3, 9),
+            (false, 3, 3, 6),
+            (false, 17, 12, 24),
+            // Should be a single ring with a modulus number of points
+            (true, 1, 3, 3),
+            (true, 2, 7, 7),
+            (true, 5, 12, 12),
+        ];
+
+        for (cycle, natural, modulus, expect_num_points) in test_cases {
+            let points = generate_points(cycle, natural, modulus);
+            assert_eq!(points.len(), expect_num_points, "Failed for natural={}, modulus={}", natural, modulus);
+            assert_eq!(points.last().unwrap().label, (expect_num_points as u32) - 1);
+        }
     }
 
     #[test]
-    fn test_scale_down_arrow_points() {
+    fn test_shrink_arrow() {
         let p1 = Point {
             x: 0.0,
             y: 32.0,
