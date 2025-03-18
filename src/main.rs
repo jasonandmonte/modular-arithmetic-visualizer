@@ -216,27 +216,43 @@ fn generate_points(cycle: bool, natural: u32, modulus: u32) -> Vec<Point> {
 /// Rings are drawn in reverse order to accommodate nannou's overlay,
 /// with opacity determined by the number of visible points.
 fn draw_rings(draw: &Draw, model: &Model) {
-    // NOTE: When evenly divides we want an extra ring (3 mod 3 should be 2 rings)
-    let num_rings = (model.natural + 1).div_ceil(model.modulus) as usize;
-    let ppr = model.points.len() / num_rings;
+    let rings = compute_rings(
+        model.natural,
+        model.modulus,
+        model.points.len(),
+        model.time as usize,
+    );
 
-    // Draw largest ring first so it is the base layer.
-    for nr in (0..num_rings).rev() {
-        // See the ring if the number of points is over the points per ring
-        let ring_opacity = if ((model.time as usize).saturating_sub(1) / ppr) >= nr {
-            1.0
-        } else {
-            0.0
-        };
-        let dynamic_blue = rgba(0.0, 0.75, 1.0, ring_opacity);
-        let scale_factor =
-            CIRCLE_SIZE * (model.modulus as f32) / RING_RADIUS_SCALE + (nr as f32) * RING_SPACING;
+    for (scale_factor, opacity) in rings {
+        let dynamic_blue = rgba(0.0, 0.75, 1.0, opacity);
         draw.ellipse()
             .radius(scale_factor)
             .no_fill()
             .stroke(dynamic_blue)
             .stroke_weight(2.0);
     }
+}
+
+/// Auxiliary function to compute rings and properties.
+fn compute_rings(natural: u32, modulus: u32, points_len: usize, time: usize) -> Vec<(f32, f32)> {
+    // NOTE: When evenly divides we want an extra ring (3 mod 3 should be 2 rings)
+    let num_rings = (natural + 1).div_ceil(modulus) as usize;
+    let ppr = points_len / num_rings;
+    let mut rings = vec![];
+
+    // Draw largest ring first so it is the base layer.
+    for nr in (0..num_rings).rev() {
+        // See the ring if the number of points is over the points per ring
+        let ring_opacity = if (time.saturating_sub(1) / ppr) >= nr {
+            1.0
+        } else {
+            0.0
+        };
+        let scale_factor =
+            CIRCLE_SIZE * (modulus as f32) / RING_RADIUS_SCALE + (nr as f32) * RING_SPACING;
+        rings.push((scale_factor, ring_opacity));
+    }
+    rings
 }
 
 /// Draw points with their associated number label at the center.
@@ -357,8 +373,18 @@ mod tests {
 
         for (cycle, natural, modulus, expect_num_points) in test_cases {
             let points = generate_points(cycle, natural, modulus);
-            assert_eq!(points.len(), expect_num_points, "Failed for natural={}, modulus={}", natural, modulus);
-            assert_eq!(points.last().unwrap().label, (expect_num_points as u32) - 1);
+            assert_eq!(
+                points.len(),
+                expect_num_points,
+                "Should have same number of points. Failed for natural={}, modulus={}",
+                natural,
+                modulus
+            );
+            assert_eq!(
+                points.last().unwrap().label,
+                (expect_num_points as u32) - 1,
+                "Last point should match the expected last number"
+            );
         }
     }
 
@@ -378,5 +404,24 @@ mod tests {
 
         assert!(arrow_points.start.y < p1.y, "Should move start point down");
         assert!(arrow_points.end.y > p2.y, "Should move end point up");
+    }
+
+    #[test]
+    fn test_compute_rings() {
+        let natural = 7;
+        let modulus = 3;
+        let points_len = 10;
+        let time = 5;
+
+        let rings = compute_rings(natural, modulus, points_len, time);
+
+        let expected_num_rings = (natural + 1).div_ceil(modulus) as usize;
+        assert_eq!(
+            rings.len(),
+            expected_num_rings,
+            "Should have same number of rings"
+        );
+        assert_eq!(rings[0].0, 104.0, "Should have ring scaling");
+        assert_eq!(rings[0].1, 0.0, "Should be opaque");
     }
 }
