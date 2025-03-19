@@ -1,9 +1,11 @@
 use nannou::prelude::*;
 use nannou_egui::{egui, Egui};
+use std::collections::HashSet;
 
 const CIRCLE_SIZE: f32 = 32.0;
 const RING_SPACING: f32 = 40.0;
 const RING_RADIUS_SCALE: f32 = 4.0;
+const CYCLE_COLORS: [Srgb<u8>; 6] = [SLATEBLUE, TOMATO, ORANGE, SLATEGRAY, ORCHID, MEDIUMSEAGREEN];
 
 /// Holds geometry for the number representation.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -318,21 +320,72 @@ fn draw_arrow_reduction(draw: &Draw, model: &Model) {
 /// Iterates over the points in the model and draws an arrow per second and
 /// shows the cycles in a modulo.
 fn draw_cycle_arrows(draw: &Draw, model: &Model) {
-    for (i, start_point) in model.points.iter().enumerate() {
-        if i >= model.time as usize {
+    let cycles = find_cycles(&model.points, model.natural, model.modulus);
+
+    for (i, cycle) in cycles.iter().enumerate() {
+        let color = CYCLE_COLORS[i % CYCLE_COLORS.len()];
+        let mut iterator = cycle.iter();
+        // Start of the cycle
+        let head = iterator.next();
+        let mut curr = head.unwrap();
+        let mut next = iterator.next();
+
+        while next.is_some() {
+            if curr.1 >= model.time {
+                break;
+            }
+            let arrow_points = shrink_arrow(&curr.0, &next.unwrap().0);
+            curr = next.unwrap();
+            next = iterator.next();
+
+            draw.arrow()
+                .color(color)
+                .stroke_weight(4.0)
+                .head_width(12.0)
+                .points(arrow_points.start, arrow_points.end);
+        }
+        // Draw last arrow that points back to starting point
+        if curr.1 >= model.time {
             break;
         }
-
-        let end = (i + model.natural as usize) % model.modulus as usize;
-        let end_point = &model.points[end];
-        let arrow_points = shrink_arrow(start_point, end_point);
-
+        let arrow_points = shrink_arrow(&curr.0, &head.unwrap().0);
         draw.arrow()
-            .color(ORANGE)
+            .color(color)
             .stroke_weight(4.0)
             .head_width(12.0)
             .points(arrow_points.start, arrow_points.end);
     }
+}
+
+/// Finds cycles within a modulus given a natural number adder.
+fn find_cycles(points: &[Point], natural: u32, modulus: u32) -> Vec<Vec<(Point, f32)>> {
+    let mut num_set: HashSet<usize> = (0..modulus as usize).collect();
+    let mut cycles = vec![];
+    let mut display_time: f32 = 0.0;
+
+    for i in 0..modulus as usize {
+        // Number already appears within a cycle
+        if !num_set.contains(&i) {
+            continue;
+        }
+
+        let mut cycle = vec![];
+        let mut j = i;
+        while num_set.remove(&j) {
+            // Spacing out the display of elements
+            cycle.push((points[j], display_time));
+            display_time += 1.0;
+            // Staying within bounds
+            j = (j + natural as usize) % modulus as usize;
+
+            if j == i {
+                break;
+            }
+        }
+
+        cycles.push(cycle);
+    }
+    cycles
 }
 
 /// Shortens an arrow between two points by adjusting moving the start and end
@@ -423,5 +476,40 @@ mod tests {
         );
         assert_eq!(rings[0].0, 104.0, "Should have ring scaling");
         assert_eq!(rings[0].1, 0.0, "Should be opaque");
+    }
+
+    #[test]
+    fn test_find_cycles() {
+        let points = vec![
+            Point {
+                x: 0.0,
+                y: 0.0,
+                label: 0,
+            },
+            Point {
+                x: 0.0,
+                y: 0.0,
+                label: 1,
+            },
+            Point {
+                x: 0.0,
+                y: 0.0,
+                label: 2,
+            },
+            Point {
+                x: 0.0,
+                y: 0.0,
+                label: 3,
+            },
+        ];
+        let cycles = find_cycles(&points, 2, 4);
+
+        assert_eq!(cycles[0].len(), 2);
+        assert_eq!(cycles[0][0].0.label, 0);
+        assert_eq!(cycles[0][1].0.label, 2);
+
+        assert_eq!(cycles[1].len(), 2);
+        assert_eq!(cycles[1][0].0.label, 1);
+        assert_eq!(cycles[1][1].0.label, 3);
     }
 }
