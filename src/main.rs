@@ -361,7 +361,7 @@ fn draw_cycle_arrows(draw: &Draw, model: &Model) {
 fn find_cycles(points: &[Point], natural: u32, modulus: u32) -> Vec<Vec<(Point, f32)>> {
     let mut num_set: HashSet<usize> = (0..modulus as usize).collect();
     let mut cycles = vec![];
-    let mut display_time: f32 = 0.0;
+    let mut display_time: f32 = 1.0;
 
     for i in 0..modulus as usize {
         // Number already appears within a cycle
