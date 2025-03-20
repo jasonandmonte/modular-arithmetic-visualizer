@@ -60,7 +60,7 @@ I struggled finding a way to test functions involving structures from nannou suc
 
 ### Lessons Learned
 
-Going into this project very little experience with animation or graphics, I had to learn how to work with nannou and understand how shapes were drawn and animations occurred over time. For both of these I found the documentation to be a good first step. In particular the [Anatomy of a Nannou App](https://guide.nannou.cc/tutorials/basics/anatomy-of-a-nannou-app) and [Animating a Circle](https://guide.nannou.cc/tutorials/draw/animating-a-circle) were of great help. Beyond this experimenting with the examples in the [GitHub repository](https://github.com/nannou-org/nannou/tree/master/examples) helped me understand what was possible.
+Going into this project with very little experience in animation or graphics, I had to learn how to work with nannou and understand how shapes were drawn and animations occurred over time. For both of these I found the documentation to be a good first step. In particular the [Anatomy of a Nannou App](https://guide.nannou.cc/tutorials/basics/anatomy-of-a-nannou-app) and [Animating a Circle](https://guide.nannou.cc/tutorials/draw/animating-a-circle) were of great help. Beyond this experimenting with the examples in the [GitHub repository](https://github.com/nannou-org/nannou/tree/master/examples) helped me understand what was possible.
 
 I also enjoyed learning about `clap` for argument parsing. Unfortunately it didn't make the final cut of the project, but I am looking forward to using this crate again in other projects that will primarily be on the command line.
 
